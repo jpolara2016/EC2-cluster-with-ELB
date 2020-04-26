@@ -1,0 +1,144 @@
+---
+  - name: Provision an EC2 Instance
+    hosts: local
+    connection: local
+    gather_facts: False
+    debugger: on_failed
+    vars_files:
+      - vars.yml
+    tags: provisioning
+
+
+    # Task that will be used to Launch/Create an EC2 Instance
+    tasks:
+
+      # Create a securit group, skip it if already exists
+      - name: Create a security group
+        local_action:
+          module: ec2_group
+          name: "{{ security_group }}SG"
+          description: Security Group for webserver Servers
+          region: "{{ region }}"
+          vpc_id: "{{ vpc }}"
+          rules:
+            - proto: tcp
+              from_port: 22
+              to_port: 22
+              cidr_ip: 0.0.0.0/0
+          rules_egress:
+            - proto: all
+              cidr_ip: 0.0.0.0/0
+        register: basic_firewall
+
+      # Create an ELB, skip it if already exists
+      - name: Create ELB
+        local_action:
+          module: ec2_elb_lb
+          name: "{{ Name }}LB"
+          state: present
+          region: "{{ region }}"
+          security_group_names:
+            - "{{ basic_firewall.group_name }}"
+          connection_draining_timeout: 60
+          idle_timeout: 300
+          cross_az_load_balancing: "yes"
+          zones:
+            - "{{ zone1 }}"
+            - "{{ zone2 }}"
+          listeners:
+            - protocol: http  # if it is https, you must provide a ssl_certificate_id
+              load_balancer_port: 80
+              instance_port: 80
+          health_check:
+            ping_protocol: http # options are http, https, ssl, tcp
+            ping_port: 80
+            ping_path: "/index.html" # not required for tcp or ssl. Instances will not pass the health check if does not find index.html
+            response_timeout: 5 # seconds
+            interval: 30 # seconds
+            unhealthy_threshold: 2
+            healthy_threshold: 10
+          stickiness:
+            type: loadbalancer
+            enabled: yes
+            expiration: 300
+          tags:
+            Name: "{{Name}}LB"
+            stack: "production"
+            client: "jignesh"
+
+      # Launch the new EC2 Instance/s in Subnet 1
+      - name: Launch EC2 in Subnet 1 "{{ subnet1 }}"
+        local_action:
+          module: ec2
+          group: "{{ security_group }}SG"
+          instance_type: "{{ instance_type}}"
+          image: "{{ image }}"
+          wait: true
+          region: "{{ region }}"
+          keypair: "{{ keypair }}"
+          vpc_subnet_id: "{{ subnet1 }}"
+          volumes:
+            - device_name: "{{ device_name }}"
+              volume_type: "{{ volume_type }}"
+              volume_size: "{{ volume_size }}"
+          instance_tags:
+            account: "{{ Id }}"
+            Name: "{{ Name }}{{ item | int }}.jpolara.com"
+          state: present
+        with_sequence: start=1 end="{{ instance_in_each_subnet }}"
+        register: subnet1_ec2
+
+      - name: Debug ec2 variable
+        debug: var=subnet1_ec2
+
+
+      # Launch the new EC2 Instance/s in Subnet 2
+      - name: Launch EC2 in Subnet 2 "{{ subnet2 }}"
+        local_action:
+          module: ec2
+          group: "{{ security_group }}SG"
+          instance_type: "{{ instance_type}}"
+          image: "{{ image }}"
+          wait: true
+          region: "{{ region }}"
+          keypair: "{{ keypair }}"
+          vpc_subnet_id: "{{ subnet1 }}"
+          volumes:
+            - device_name: "{{ device_name }}"
+              volume_type: "{{ volume_type }}"
+              volume_size: "{{ volume_size }}"
+          instance_tags:
+            account: "{{ Id }}"
+            Name: "{{ Name }}{{ item | int }}.jpolara.com"
+          state: present
+        with_sequence: start="{{ instance_in_each_subnet | int + 1 }}" end="{{ instance_in_each_subnet | int * 2 }}"
+        register: subnet2_ec2
+
+      - name: Debug ec2 variable
+        debug: var=subnet2_ec2
+
+      # Gather info of launched EC2 instances
+      - name: Gather EC2 Info
+        ec2_instance_info:
+          region: "{{ region }}"
+          filters:
+            "tag:account": "{{ Id | int }}"  # You can choose multiple filters here. Ref: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/API_DescribeInstances.html
+        register: new_lanched_ec2
+
+      # Associate an elastic to all instances
+      - name: Associate an elastic to each instance
+        ec2_eip:
+          region: "{{ region }}"
+          device_id: "{{ item.instance_id }}"
+          state: present
+        loop: "{{ new_lanched_ec2.instances }}"
+
+      # Register Instances with ELB
+      - name: Instance Register with ELB
+        local_action:
+          module: ec2_elb
+          region: "{{ region }}"
+          instance_id: "{{ item.instance_id }}"
+          ec2_elbs: "{{ Name }}LB"
+          state: present
+        loop: "{{ new_lanched_ec2.instances }}"

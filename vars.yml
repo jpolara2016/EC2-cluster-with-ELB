@@ -1,0 +1,29 @@
+---
+
+region: us-east-1
+zone1: us-east-1a # You can provide multiple zones here. It will be used for load balancing.
+zone2: us-east-1b
+
+total_count: 4 # This value is not used to provision the cluster. This is just for your infromation to give you an idea how many instances will be launched.
+instance_in_each_subnet: 2 # How many instances you want to launch in each subnet.
+#initial_count: 0 #
+
+# You must provide VPC & subnets' ID if you want to launch instances into existing VPC.
+vpc: vpc-0d2962af11af54a24
+subnet1: subnet-0741f3cc48ea33b97
+subnet2: subnet-004d9f0a176897663
+
+
+instance_type: t2.micro
+security_group: ansible-webserver # Change the security group name here.
+image: ami-0fc61db8544a617ed # You can use a custome AMI or provided by AWS.
+keypair: Virginia # Provide a name of existing key (region specific).
+
+# volume's type & size
+device_name: /dev/xvda
+volume_type: gp2
+volume_size: 8
+
+# The below values can be used for taggings.
+Name: jigo
+Id: 909090
