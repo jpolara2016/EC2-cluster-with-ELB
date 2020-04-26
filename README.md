@@ -20,3 +20,6 @@ export AWS_SECRET_ACCESS_KEY=Dhc/rLx2qfhaksjhdkasjY695/FPOMIQivRYGKqniOeqcBF1y+W
 ansible-playbook -i host cluster.yml -vv
 ```
 
+## Diagram
+You can launch multiple instances in multiple subnets
+![Alt text](/diagram?raw=true "Optional Title")
